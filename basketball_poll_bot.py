@@ -90,7 +90,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    question = "test"
+    question = "current chat id: " + update.message.chat_id
     options = ["answer 1", "answer 2", "answer 3"]
     message = await context.bot.send_poll(chat_id=update.message.chat_id, question=question, options=options, is_anonymous=False)
     await context.bot.pin_chat_message(
@@ -110,7 +110,7 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def run_forever():
 
-    if POLL_BOT_TOKEN == None or TG_CHAT_IDS == None:
+    if POLL_BOT_TOKEN == None or TG_CHAT_IDS == None or TH_CHAT_IDS == None:
         print("can't get envs, check .env file")
     try:
         games = [
