@@ -9,6 +9,16 @@ import os
 load_dotenv(find_dotenv())
 POLL_BOT_TOKEN = os.getenv('POLL_BOT_TOKEN')
 TG_CHAT_IDS = json.loads(os.getenv('TG_CHAT_IDS'))
+OFFICE_CHAT_IDS = json.loads(os.getenv('OFFICE_CHAT_IDS'))
+
+async def go_to_office_poll(context: ContextTypes.DEFAULT_TYPE) -> None:
+    question = "Когда в офис? 💜"
+    options = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Не на этой неделе"]
+    message = await context.bot.send_poll(chat_id=context.job.chat_id, question=question, options=options, is_anonymous=False)
+    await context.bot.pin_chat_message(
+            chat_id=context.job.chat_id,
+            message_id=message.message_id,
+        )
 
 async def send_training_poll(context: ContextTypes.DEFAULT_TYPE) -> None:
     question = "Тренировка завтра"
@@ -36,6 +46,16 @@ async def send_lchb_poll(context: ContextTypes.DEFAULT_TYPE) -> None:
             chat_id=context.job.chat_id,
             message_id=message.message_id,
         )
+def set_office_polls(application, chat_id) -> None:
+
+    application.job_queue.run_daily(
+        callback=go_to_office_poll,
+        days=(5),
+        time=time(19, 0, 0, 0),
+        days = (0,),
+        chat_id=chat_id,
+        name=str("Опрос по офису"),
+    )
 
 def set_polls(application, chat_id, games) -> None:
 
@@ -89,6 +109,7 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 def run_forever():
+
     if POLL_BOT_TOKEN == None or TG_CHAT_IDS == None:
         print("can't get envs, check .env file")
     try:
@@ -101,6 +122,8 @@ def run_forever():
         application = Application.builder().token(POLL_BOT_TOKEN).build()
         for chat_id in TG_CHAT_IDS:
             set_polls(application, chat_id, games)
+        for chat_id in OFFICE_CHAT_IDS:
+            set_office_polls(application, chat_id)
         application.add_handler(CommandHandler(["start", "help", "ping"], start))
         application.add_handler(CommandHandler(["test"], test))
         application.add_handler(CommandHandler(["schedule"], schedule))
