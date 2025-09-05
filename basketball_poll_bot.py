@@ -50,9 +50,8 @@ def set_office_polls(application, chat_id) -> None:
 
     application.job_queue.run_daily(
         callback=go_to_office_poll,
-        days=(5),
         time=time(19, 0, 0, 0),
-        days = (0,),
+        days = (5,),
         chat_id=chat_id,
         name=str("Опрос по офису"),
     )
@@ -90,7 +89,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    question = "current chat id: " + update.message.chat_id
+    question = "current chat id: " + str(update.message.chat_id)
     options = ["answer 1", "answer 2", "answer 3"]
     message = await context.bot.send_poll(chat_id=update.message.chat_id, question=question, options=options, is_anonymous=False)
     await context.bot.pin_chat_message(
@@ -110,7 +109,7 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def run_forever():
 
-    if POLL_BOT_TOKEN == None or TG_CHAT_IDS == None or TH_CHAT_IDS == None:
+    if POLL_BOT_TOKEN == None or TG_CHAT_IDS == None or OFFICE_CHAT_IDS == None:
         print("can't get envs, check .env file")
     try:
         games = [
