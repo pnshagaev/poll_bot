@@ -1,0 +1,12 @@
+[Unit]
+Description=My Service
+After=network.target
+
+[Service]
+Type=idle
+Restart=on-failure
+User=root
+ExecStart=/bin/bash -c 'cd /home/ubuntu/basketball_bot/ && venv/bin/python basketball_poll_bot.py'
+
+[Install]
+WantedBy=multi-user.target
