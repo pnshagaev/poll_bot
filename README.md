@@ -1,0 +1,2 @@
+- Бот лежит на сервере амнезии
+- Скрипт запуска /etc/systemd/system/basketball.bot.service
