@@ -14,7 +14,7 @@ OFFICE_CHAT_IDS = json.loads(os.getenv('OFFICE_CHAT_IDS'))
 async def go_to_office_poll(context: ContextTypes.DEFAULT_TYPE) -> None:
     question = "Когда в офис? 💜"
     options = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Не на этой неделе"]
-    message = await context.bot.send_poll(chat_id=context.job.chat_id, question=question, options=options, is_anonymous=False)
+    message = await context.bot.send_poll(chat_id=context.job.chat_id, question=question, options=options, is_anonymous=False, allows_multiple_answers=True)
     await context.bot.pin_chat_message(
             chat_id=context.job.chat_id,
             message_id=message.message_id,
@@ -50,7 +50,7 @@ def set_office_polls(application, chat_id) -> None:
 
     application.job_queue.run_daily(
         callback=go_to_office_poll,
-        time=time(19, 0, 0, 0),
+        time=time(15, 0, 0, 0),
         days = (5,),
         chat_id=chat_id,
         name=str("Опрос по офису"),
