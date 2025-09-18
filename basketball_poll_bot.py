@@ -113,11 +113,11 @@ def run_forever():
         print("can't get envs, check .env file")
     try:
         games = [
-                { "question": "Тур 1 (Сб) 20.09.2025	21:00\nСовкомбанк	-	Авито", "poll_date": datetime(2025, 9, 18, 8)},
-                { "question": "Тур 2 (Сб) 27.09.2025	17:00\nАвито	-	Банк России", "poll_date": datetime(2025, 9, 25, 8)},
-                { "question": "Тур 3 (Сб) 04.10.2025	18:20\nКрок	-	Авито", "poll_date": datetime(2025, 10, 2, 8)},
-                { "question": "Тур 4 (Сб) 11.10.2025	19:40\nАвито	-	МКК", "poll_date": datetime(2025, 10, 9, 8)},
-                { "question": "Тур 5 (Сб) 18.10.2025	21:00\nEndorphin Group	-	Авито", "poll_date": datetime(2025, 10, 16, 8)},
+                { "question": "Тур 1 (Сб) 20.09.2025	21:00\nПлощадка №2\nСовкомбанк	-	Авито", "poll_date": datetime(2025, 9, 18, 8)},
+                { "question": "Тур 2 (Сб) 27.09.2025	17:00\nПлощадка №3\nАвито	-	Банк России", "poll_date": datetime(2025, 9, 25, 8)},
+                { "question": "Тур 3 (Сб) 04.10.2025	18:20\nПлощадка №1\nКрок	-	Авито", "poll_date": datetime(2025, 10, 2, 8)},
+                { "question": "Тур 4 (Сб) 11.10.2025	19:40\nПлощадка №2\nАвито	-	МКК", "poll_date": datetime(2025, 10, 9, 8)},
+                { "question": "Тур 5 (Сб) 18.10.2025	21:00\nПлощадка №3\nEndorphin Group	-	Авито", "poll_date": datetime(2025, 10, 16, 8)},
         ]
 
         application = Application.builder().token(POLL_BOT_TOKEN).build()
