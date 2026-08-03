@@ -1,12 +1,30 @@
 [Unit]
-Description=My Service
-After=network.target
+Description=Basketball Telegram Poll Bot
+Wants=network-online.target
+After=network-online.target
+
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
-Type=idle
+Type=simple
+
+User=ubuntu
+Group=ubuntu
+
+WorkingDirectory=/home/ubuntu/basketball_bot
+EnvironmentFile=/home/ubuntu/basketball_bot/.env
+
+ExecStart=/home/ubuntu/basketball_bot/venv/bin/python -u /home/ubuntu/basketball_bot/basketball_poll_bot.py
+
 Restart=on-failure
-User=root
-ExecStart=/bin/bash -c 'cd /home/ubuntu/basketball_bot/ && venv/bin/python basketball_poll_bot.py'
+RestartSec=10s
+
+TimeoutStopSec=30s
+NoNewPrivileges=true
+
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
