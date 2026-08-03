@@ -107,31 +107,40 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text
     )
 
-def run_forever():
+def main() -> None:
 
-    if POLL_BOT_TOKEN == None or TG_CHAT_IDS == None or OFFICE_CHAT_IDS == None:
-        print("can't get envs, check .env file")
-    try:
-        games = [
-                { "question": "Тур 1 (Сб) 20.09.2025	21:00\nПлощадка №2\nСовкомбанк	-	Авито", "poll_date": datetime(2025, 9, 18, 8)},
-                { "question": "Тур 2 (Сб) 27.09.2025	17:00\nПлощадка №3\nАвито	-	Банк России", "poll_date": datetime(2025, 9, 25, 8)},
-                { "question": "Тур 3 (Сб) 04.10.2025	18:20\nПлощадка №1\nКрок	-	Авито", "poll_date": datetime(2025, 10, 2, 8)},
-                { "question": "Тур 4 (Сб) 11.10.2025	19:40\nПлощадка №2\nАвито	-	МКК", "poll_date": datetime(2025, 10, 9, 8)},
-                { "question": "Тур 5 (Сб) 18.10.2025	21:00\nПлощадка №3\nEndorphin Group	-	Авито", "poll_date": datetime(2025, 10, 16, 8)},
-        ]
+    if not POLL_BOT_TOKEN:
+        raise RuntimeError("POLL_BOT_TOKEN is not configured")
 
-        application = Application.builder().token(POLL_BOT_TOKEN).build()
-        for chat_id in TG_CHAT_IDS:
-            set_polls(application, chat_id, games)
-        for chat_id in OFFICE_CHAT_IDS:
-            set_office_polls(application, chat_id)
-        application.add_handler(CommandHandler(["start", "help", "ping"], start))
-        application.add_handler(CommandHandler(["test"], test))
-        application.add_handler(CommandHandler(["schedule"], schedule))
-        application.run_polling()
-    except Exception as e:
-            print("Something crashed your program. Let's restart it:")
-            print(e)
-            run_forever() # Careful.. recursive behavior
+    if TG_CHAT_IDS is None:
+        raise RuntimeError("TG_CHAT_IDS is not configured")
 
-run_forever()
+    if OFFICE_CHAT_IDS is None:
+        raise RuntimeError("OFFICE_CHAT_IDS is not configured")
+
+    games = [
+            { "question": "Тур 5 (Сб) 18.10.2025	21:00\nПлощадка №3\nEndorphin Group	-	Авито", "poll_date": datetime(2025, 10, 16, 8)},
+    ]
+
+    application = Application.builder().token(POLL_BOT_TOKEN).build()
+
+    for chat_id in TG_CHAT_IDS:
+        set_polls(application, chat_id, games)
+    
+    for chat_id in OFFICE_CHAT_IDS:
+        set_office_polls(application, chat_id)
+    
+    application.add_handler(CommandHandler(["start", "help", "ping"], start))
+    application.add_handler(CommandHandler(["test"], test))
+    application.add_handler(CommandHandler(["schedule"], schedule))
+
+    application.run_polling()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    main()
