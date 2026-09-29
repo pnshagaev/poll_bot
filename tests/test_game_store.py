@@ -13,7 +13,7 @@ def game(game_id: str = "game-1", **changes):
         "id": game_id,
         "match_at": "2026-10-18T21:00:00Z",
         "poll_at": "2026-10-16T08:00:00Z",
-        "question": "Тур 5\nПлощадка №3\nEndorphin Group — Авито",
+        "question": "Тур 5\nПлощадка №3\nАвито — Соперник",
         "status": "scheduled",
         "sent_chat_ids": [],
     }
@@ -91,3 +91,15 @@ def test_question_cannot_exceed_telegram_limit(tmp_path):
 
     with pytest.raises(GamesStoreError, match="at most 300"):
         store.save([game(question="x" * 301)])
+
+
+def test_new_game_with_teams_must_include_avito_and_preserves_team_order(tmp_path):
+    store = GamesStore(tmp_path / "games.json")
+    store.save([game(first_team="Соперник", second_team="Авито")])
+
+    saved_game = store.load()[0]
+    assert saved_game["first_team"] == "Соперник"
+    assert saved_game["second_team"] == "Авито"
+
+    with pytest.raises(GamesStoreError, match="One team must be Авито"):
+        store.save([game(first_team="Команда 1", second_team="Команда 2")])

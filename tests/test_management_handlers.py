@@ -5,10 +5,18 @@ from types import SimpleNamespace
 from basketball_poll_bot import (
     ADD_CUSTOM_POLL_AT,
     ADD_CUSTOM_VENUE,
-    ADD_OPPONENT,
+    ADD_CUSTOM_FIRST_TEAM,
+    ADD_CUSTOM_SECOND_TEAM,
+    ADD_CONFIRM,
+    ADD_FIRST_TEAM,
+    ADD_SECOND_TEAM,
     UTC,
+    add_custom_first_team,
+    add_custom_second_team,
     add_custom_venue,
+    add_first_team,
     add_match_at,
+    add_second_team,
     add_venue,
     add_game_confirm,
     cancel_conversation,
@@ -29,7 +37,7 @@ class FakeQuery:
         self.answered = False
         self.edited_text = None
 
-    async def answer(self):
+    async def answer(self, **kwargs):
         self.answered = True
 
     async def edit_message_text(self, text: str, **kwargs):
@@ -72,8 +80,9 @@ def draft(now: datetime):
         "match_at": now + timedelta(days=4),
         "poll_at": now + timedelta(days=2),
         "venue": "Площадка №3",
-        "opponent": "Авито",
-        "question": "Тур 6\nПлощадка №3\nEndorphin Group — Авито",
+        "first_team": "Авито",
+        "second_team": "Соперник",
+        "question": "Тур 6\nПлощадка №3\nАвито — Соперник",
     }
 
 
@@ -139,7 +148,7 @@ def test_games_list_with_games_is_available_to_non_owner_without_management_butt
                 "id": "game-1",
                 "match_at": "2026-10-18T21:00:00Z",
                 "poll_at": "2026-10-16T08:00:00Z",
-                "question": "Тур 5\nПлощадка №3\nEndorphin Group — Авито",
+                "question": "Тур 5\nПлощадка №3\nАвито — Соперник",
                 "status": "scheduled",
                 "sent_chat_ids": [],
             }
@@ -197,9 +206,9 @@ def test_standard_venue_button_advances_the_add_game_conversation():
 
     next_state = asyncio.run(add_venue(update, context))
 
-    assert next_state == ADD_OPPONENT
+    assert next_state == ADD_FIRST_TEAM
     assert context.user_data["game_draft"]["venue"] == "Площадка №3"
-    assert query.edited_text == "Введите соперника:"
+    assert query.edited_text == "Выберите первую команду. Порядок команд влияет на цвет формы:"
 
 
 def test_other_venue_button_requests_a_custom_venue():
@@ -219,8 +228,75 @@ def test_custom_venue_is_saved_before_requesting_an_opponent():
 
     next_state = asyncio.run(add_custom_venue(update, context))
 
-    assert next_state == ADD_OPPONENT
+    assert next_state == ADD_FIRST_TEAM
     assert context.user_data["game_draft"]["venue"] == "Зал школы №42"
+
+
+def test_avito_can_be_selected_as_the_first_team():
+    query = FakeQuery("add-first-team:avito")
+    context = SimpleNamespace(user_data={"game_draft": {}})
+    update = SimpleNamespace(callback_query=query)
+
+    next_state = asyncio.run(add_first_team(update, context))
+
+    assert next_state == ADD_SECOND_TEAM
+    assert context.user_data["game_draft"]["first_team"] == "Авито"
+    assert query.edited_text == "Выберите вторую команду. Порядок команд влияет на цвет формы:"
+
+
+def test_custom_first_team_requires_avito_as_the_second_team():
+    message = FakeMessage("Соперник")
+    context = SimpleNamespace(user_data={"game_draft": {}})
+    update = SimpleNamespace(effective_message=message)
+
+    next_state = asyncio.run(add_custom_first_team(update, context))
+
+    assert next_state == ADD_SECOND_TEAM
+    assert context.user_data["game_draft"]["first_team"] == "Соперник"
+
+
+def test_avito_can_be_selected_as_the_second_team_after_a_custom_first_team():
+    query = FakeQuery("add-second-team:avito")
+    context = SimpleNamespace(
+        user_data={
+            "game_draft": {
+                "tour": "Тур 6",
+                "match_at": datetime(2026, 10, 18, 21, tzinfo=UTC),
+                "poll_at": datetime(2026, 10, 16, 8, tzinfo=UTC),
+                "venue": "Площадка №3",
+                "first_team": "Соперник",
+            }
+        }
+    )
+    update = SimpleNamespace(callback_query=query, effective_message=FakeMessage(""))
+
+    next_state = asyncio.run(add_second_team(update, context))
+
+    assert next_state == ADD_CONFIRM
+    assert context.user_data["game_draft"]["second_team"] == "Авито"
+    assert "Соперник\t-\tАвито" in context.user_data["game_draft"]["question"]
+
+
+def test_manual_second_team_requires_avito_when_it_is_not_the_first_team():
+    message = FakeMessage("Другая команда")
+    context = SimpleNamespace(user_data={"game_draft": {"first_team": "Соперник"}})
+    update = SimpleNamespace(effective_message=message)
+
+    next_state = asyncio.run(add_custom_second_team(update, context))
+
+    assert next_state == ADD_SECOND_TEAM
+    assert "Одна из команд должна быть Авито" in message.replies[0][0]
+
+
+def test_second_team_can_offer_avito_but_rejects_duplicate_avito():
+    query = FakeQuery("add-second-team:avito")
+    context = SimpleNamespace(user_data={"game_draft": {"first_team": "Авито"}})
+    update = SimpleNamespace(callback_query=query)
+
+    next_state = asyncio.run(add_second_team(update, context))
+
+    assert next_state == ADD_SECOND_TEAM
+    assert "second_team" not in context.user_data["game_draft"]
 
 
 def test_cancel_clears_an_interactive_draft():

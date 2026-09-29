@@ -38,11 +38,14 @@ PAGE_SIZE = 6
     ADD_CUSTOM_POLL_AT,
     ADD_VENUE,
     ADD_CUSTOM_VENUE,
-    ADD_OPPONENT,
+    ADD_FIRST_TEAM,
+    ADD_CUSTOM_FIRST_TEAM,
+    ADD_SECOND_TEAM,
+    ADD_CUSTOM_SECOND_TEAM,
     ADD_CONFIRM,
     DELETE_SELECT,
     DELETE_CONFIRM,
-) = range(10)
+) = range(12)
 
 load_dotenv(find_dotenv())
 POLL_BOT_TOKEN = os.getenv("POLL_BOT_TOKEN")
@@ -113,12 +116,18 @@ def suggested_poll_at(match_at: datetime) -> datetime:
     return (match_at - timedelta(days=2)).replace(hour=8, minute=0, second=0, microsecond=0)
 
 
-def format_game_question(tour: str, match_at: datetime, venue: str, opponent: str) -> str:
+def format_game_question(
+    tour: str,
+    match_at: datetime,
+    venue: str,
+    first_team: str,
+    second_team: str,
+) -> str:
     weekdays = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
     return (
         f"{tour} ({weekdays[match_at.weekday()]}) "
         f"{match_at:%d.%m.%Y}\t{match_at:%H:%M}\n"
-        f"{venue}\nEndorphin Group\t-\t{opponent}"
+        f"{venue}\n{first_team}\t-\t{second_team}"
     )
 
 
@@ -429,21 +438,129 @@ async def add_venue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ADD_CUSTOM_VENUE
 
     context.user_data["game_draft"]["venue"] = VENUES[int(venue_value)]
-    await query.edit_message_text("Введите соперника:")
-    return ADD_OPPONENT
+    await query.edit_message_text(
+        "Выберите первую команду. Порядок команд влияет на цвет формы:",
+        reply_markup=first_team_keyboard(),
+    )
+    return ADD_FIRST_TEAM
 
 
 async def add_custom_venue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["game_draft"]["venue"] = update.effective_message.text.strip()
-    await update.effective_message.reply_text("Введите соперника:")
-    return ADD_OPPONENT
+    await update.effective_message.reply_text(
+        "Выберите первую команду. Порядок команд влияет на цвет формы:",
+        reply_markup=first_team_keyboard(),
+    )
+    return ADD_FIRST_TEAM
 
 
-async def add_opponent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def first_team_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Авито", callback_data="add-first-team:avito")],
+            [InlineKeyboardButton("Другая команда", callback_data="add-first-team:other")],
+            [InlineKeyboardButton("Отмена", callback_data="cancel")],
+        ]
+    )
+
+
+def second_team_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Авито", callback_data="add-second-team:avito")],
+            [InlineKeyboardButton("Другая команда", callback_data="add-second-team:other")],
+            [InlineKeyboardButton("Отмена", callback_data="cancel")],
+        ]
+    )
+
+
+def normalize_team_name(value: str) -> str:
+    team_name = value.strip()
+    if not team_name:
+        raise ValueError("Название команды не может быть пустым")
+    if team_name.casefold() == "авито":
+        return "Авито"
+    return team_name
+
+
+async def add_first_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    team_value = query.data.split(":", 1)[1]
+    if team_value == "other":
+        await query.edit_message_text("Введите первую команду:")
+        return ADD_CUSTOM_FIRST_TEAM
+
+    context.user_data["game_draft"]["first_team"] = "Авито"
+    await query.edit_message_text(
+        "Выберите вторую команду. Порядок команд влияет на цвет формы:",
+        reply_markup=second_team_keyboard(),
+    )
+    return ADD_SECOND_TEAM
+
+
+async def add_custom_first_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        first_team = normalize_team_name(update.effective_message.text)
+    except ValueError as error:
+        await update.effective_message.reply_text(f"{error}. Попробуйте ещё раз.")
+        return ADD_CUSTOM_FIRST_TEAM
+
+    context.user_data["game_draft"]["first_team"] = first_team
+    await update.effective_message.reply_text(
+        "Выберите вторую команду. Порядок команд влияет на цвет формы:",
+        reply_markup=second_team_keyboard(),
+    )
+    return ADD_SECOND_TEAM
+
+
+async def add_second_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    team_value = query.data.split(":", 1)[1]
+    if team_value == "other":
+        await query.answer()
+        await query.edit_message_text("Введите вторую команду:")
+        return ADD_CUSTOM_SECOND_TEAM
+
+    if context.user_data["game_draft"]["first_team"] == "Авито":
+        await query.answer("Команды должны различаться", show_alert=True)
+        return ADD_SECOND_TEAM
+
+    await query.answer()
+    context.user_data["game_draft"]["second_team"] = "Авито"
+    return await show_game_preview(update, context)
+
+
+async def add_custom_second_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = context.user_data["game_draft"]
-    draft["opponent"] = update.effective_message.text.strip()
+    try:
+        second_team = normalize_team_name(update.effective_message.text)
+    except ValueError as error:
+        await update.effective_message.reply_text(f"{error}. Попробуйте ещё раз.")
+        return ADD_CUSTOM_SECOND_TEAM
+
+    if second_team == draft["first_team"]:
+        await update.effective_message.reply_text("Первая и вторая команды должны различаться. Попробуйте ещё раз.")
+        return ADD_CUSTOM_SECOND_TEAM
+    if "Авито" not in (draft["first_team"], second_team):
+        await update.effective_message.reply_text(
+            "Одна из команд должна быть Авито. Выберите вторую команду:",
+            reply_markup=second_team_keyboard(),
+        )
+        return ADD_SECOND_TEAM
+
+    draft["second_team"] = second_team
+    return await show_game_preview(update, context)
+
+
+async def show_game_preview(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    draft = context.user_data["game_draft"]
     question = format_game_question(
-        draft["tour"], draft["match_at"], draft["venue"], draft["opponent"]
+        draft["tour"],
+        draft["match_at"],
+        draft["venue"],
+        draft["first_team"],
+        draft["second_team"],
     )
     if len(question) > 300:
         await update.effective_message.reply_text("Текст опроса длиннее 300 символов. Начните заново: /addgame")
@@ -451,16 +568,18 @@ async def add_opponent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return ConversationHandler.END
 
     draft["question"] = question
-    await update.effective_message.reply_text(
-        f"Предпросмотр:\n\n{question}\n\nОпрос: {draft['poll_at']:%d.%m.%Y %H:%M} UTC",
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("Добавить", callback_data="add-confirm")],
-                [InlineKeyboardButton("Изменить", callback_data="add-restart")],
-                [InlineKeyboardButton("Отмена", callback_data="cancel")],
-            ]
-        ),
+    preview_text = f"Предпросмотр:\n\n{question}\n\nОпрос: {draft['poll_at']:%d.%m.%Y %H:%M} UTC"
+    preview_keyboard = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Добавить", callback_data="add-confirm")],
+            [InlineKeyboardButton("Изменить", callback_data="add-restart")],
+            [InlineKeyboardButton("Отмена", callback_data="cancel")],
+        ]
     )
+    if update.callback_query:
+        await update.callback_query.edit_message_text(preview_text, reply_markup=preview_keyboard)
+    else:
+        await update.effective_message.reply_text(preview_text, reply_markup=preview_keyboard)
     return ADD_CONFIRM
 
 
@@ -473,6 +592,8 @@ async def add_game_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "match_at": draft["match_at"].isoformat().replace("+00:00", "Z"),
         "poll_at": draft["poll_at"].isoformat().replace("+00:00", "Z"),
         "question": draft["question"],
+        "first_team": draft["first_team"],
+        "second_team": draft["second_team"],
         "status": "scheduled",
         "sent_chat_ids": [],
     }
@@ -621,7 +742,14 @@ def management_conversation() -> ConversationHandler:
             ADD_CUSTOM_POLL_AT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_custom_poll_at)],
             ADD_VENUE: [CallbackQueryHandler(add_venue, pattern="^add-venue:")],
             ADD_CUSTOM_VENUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_custom_venue)],
-            ADD_OPPONENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_opponent)],
+            ADD_FIRST_TEAM: [CallbackQueryHandler(add_first_team, pattern="^add-first-team:")],
+            ADD_CUSTOM_FIRST_TEAM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, add_custom_first_team)
+            ],
+            ADD_SECOND_TEAM: [CallbackQueryHandler(add_second_team, pattern="^add-second-team:")],
+            ADD_CUSTOM_SECOND_TEAM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, add_custom_second_team)
+            ],
             ADD_CONFIRM: [
                 CallbackQueryHandler(add_game_confirm, pattern="^add-confirm$"),
                 CallbackQueryHandler(add_game_start, pattern="^add-restart$"),

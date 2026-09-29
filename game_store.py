@@ -65,7 +65,19 @@ def validate_game(game: dict[str, Any]) -> dict[str, Any]:
     ):
         raise GamesStoreError("sent_chat_ids must be an array of integer chat IDs")
 
-    return {
+    first_team = game.get("first_team")
+    second_team = game.get("second_team")
+    if first_team is not None or second_team is not None:
+        if not isinstance(first_team, str) or not first_team.strip():
+            raise GamesStoreError("first_team must be a non-empty string")
+        if not isinstance(second_team, str) or not second_team.strip():
+            raise GamesStoreError("second_team must be a non-empty string")
+        if first_team == second_team:
+            raise GamesStoreError("Teams must be different")
+        if "Авито" not in (first_team, second_team):
+            raise GamesStoreError("One team must be Авито")
+
+    validated_game = {
         "id": game_id,
         "match_at": format_utc_datetime(match_at),
         "poll_at": format_utc_datetime(poll_at),
@@ -73,6 +85,10 @@ def validate_game(game: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "sent_chat_ids": list(dict.fromkeys(sent_chat_ids)),
     }
+    if first_team is not None:
+        validated_game["first_team"] = first_team.strip()
+        validated_game["second_team"] = second_team.strip()
+    return validated_game
 
 
 class GamesStore:

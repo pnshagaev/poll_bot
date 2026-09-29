@@ -20,7 +20,7 @@ def scheduled_game(poll_at: datetime):
         "id": "game-1",
         "match_at": "2026-10-18T21:00:00Z",
         "poll_at": poll_at.isoformat().replace("+00:00", "Z"),
-        "question": "Тур 5\nПлощадка №3\nEndorphin Group — Авито",
+        "question": "Тур 5\nПлощадка №3\nАвито — Соперник",
         "status": "scheduled",
         "sent_chat_ids": [],
     }
@@ -38,9 +38,10 @@ def test_format_game_question_uses_russian_weekday_and_expected_layout():
         datetime(2026, 10, 18, 21, tzinfo=UTC),
         "Площадка №3",
         "Авито",
+        "Соперник",
     )
 
-    assert question == "Тур 5 (Вс) 18.10.2026\t21:00\nПлощадка №3\nEndorphin Group\t-\tАвито"
+    assert question == "Тур 5 (Вс) 18.10.2026\t21:00\nПлощадка №3\nАвито\t-\tСоперник"
 
 
 def test_only_owner_id_can_use_admin_commands():
