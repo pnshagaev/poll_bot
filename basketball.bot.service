@@ -13,7 +13,7 @@ User=ubuntu
 Group=ubuntu
 
 WorkingDirectory=/home/ubuntu/basketball_bot
-EnvironmentFile=/home/ubuntu/basketball_bot/.env
+EnvironmentFile=/etc/basketball-bot.env
 
 ExecStart=/home/ubuntu/basketball_bot/venv/bin/python -u /home/ubuntu/basketball_bot/basketball_poll_bot.py
 
