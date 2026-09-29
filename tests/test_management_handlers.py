@@ -37,7 +37,7 @@ class FakeQuery:
         self.answered = False
         self.edited_text = None
 
-    async def answer(self, **kwargs):
+    async def answer(self, *args, **kwargs):
         self.answered = True
 
     async def edit_message_text(self, text: str, **kwargs):
