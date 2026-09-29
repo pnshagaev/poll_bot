@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Basketball Telegram Poll Bot health check
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Persistent=true
+Unit=basketball-bot-healthcheck.service
+
+[Install]
+WantedBy=timers.target

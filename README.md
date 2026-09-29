@@ -25,3 +25,31 @@ Telegram, которое бот публикует при запуске.
 venv/bin/pip install -r requirements.txt
 venv/bin/pytest
 ```
+
+## Мониторинг systemd
+
+В папке `monitor/` есть service и timer для оповещений в Telegram: при окончательном падении
+`basketball.bot` оповещение отправляется сразу, а timer дополнительно проверяет сервис раз в час.
+Для установки на сервере:
+
+```
+sudo apt install -y curl
+sudo install -D -m 755 monitor/check-basketball-bot.sh /usr/local/lib/basketball-bot-monitor/check-basketball-bot.sh
+sudo install -m 644 monitor/basketball-bot-alert.service /etc/systemd/system/basketball-bot-alert.service
+sudo install -m 644 monitor/basketball-bot-healthcheck.service /etc/systemd/system/basketball-bot-healthcheck.service
+sudo install -m 644 monitor/basketball-bot-healthcheck.timer /etc/systemd/system/basketball-bot-healthcheck.timer
+sudo install -m 644 basketball.bot.service /etc/systemd/system/basketball.bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now basketball-bot-healthcheck.timer
+sudo systemctl restart basketball.bot
+```
+
+По умолчанию скрипт использует `POLL_BOT_TOKEN` из `/etc/basketball-bot.env` и отправляет
+уведомления Telegram ID `41879174`. Для независимого мониторинга можно добавить в этот файл
+отдельный `MONITOR_BOT_TOKEN` другого Telegram-бота.
+
+Проверка отправляет реальное личное сообщение, но не останавливает сервис:
+
+```
+sudo /usr/local/lib/basketball-bot-monitor/check-basketball-bot.sh --test
+```

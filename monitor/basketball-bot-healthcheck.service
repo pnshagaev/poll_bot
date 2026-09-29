@@ -1,0 +1,6 @@
+[Unit]
+Description=Check Basketball Telegram Poll Bot health
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/basketball-bot-monitor/check-basketball-bot.sh

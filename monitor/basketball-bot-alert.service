@@ -1,0 +1,6 @@
+[Unit]
+Description=Send an alert when Basketball Telegram Poll Bot fails
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/basketball-bot-monitor/check-basketball-bot.sh --failure

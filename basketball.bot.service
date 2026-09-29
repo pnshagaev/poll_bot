@@ -2,6 +2,7 @@
 Description=Basketball Telegram Poll Bot
 Wants=network-online.target
 After=network-online.target
+OnFailure=basketball-bot-alert.service
 
 StartLimitIntervalSec=300
 StartLimitBurst=5
