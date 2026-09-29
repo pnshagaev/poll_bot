@@ -45,7 +45,7 @@ PAGE_SIZE = 6
     ADD_CONFIRM,
     DELETE_SELECT,
     DELETE_CONFIRM,
-) = range(12)
+) = range(13)
 
 load_dotenv(find_dotenv())
 POLL_BOT_TOKEN = os.getenv("POLL_BOT_TOKEN")
