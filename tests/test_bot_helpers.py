@@ -1,12 +1,19 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+from telegram.ext import Application
+
 from basketball_poll_bot import (
+    MOSCOW,
     cancel_game_jobs,
     delete_keyboard,
     format_game_question,
     game_job_name,
     is_owner,
+    localize_stored_question,
+    parse_user_datetime,
+    set_daily_polls,
     should_cancel_game_job,
     suggested_poll_at,
 )
@@ -26,10 +33,17 @@ def scheduled_game(poll_at: datetime):
     }
 
 
-def test_suggested_poll_is_two_days_before_match_at_0800_utc():
+def test_entered_datetime_is_interpreted_in_moscow():
+    match_at = parse_user_datetime("19.10.2026 00:30")
+
+    assert match_at.tzinfo is MOSCOW
+    assert match_at.astimezone(UTC) == datetime(2026, 10, 18, 21, 30, tzinfo=UTC)
+
+
+def test_suggested_poll_is_two_local_dates_before_match_at_1000_moscow():
     match_at = datetime(2026, 10, 18, 21, tzinfo=UTC)
 
-    assert suggested_poll_at(match_at) == datetime(2026, 10, 16, 8, tzinfo=UTC)
+    assert suggested_poll_at(match_at) == datetime(2026, 10, 17, 10, tzinfo=MOSCOW)
 
 
 def test_format_game_question_uses_russian_weekday_and_expected_layout():
@@ -41,7 +55,38 @@ def test_format_game_question_uses_russian_weekday_and_expected_layout():
         "Соперник",
     )
 
-    assert question == "Тур 5 (Вс) 18.10.2026\t21:00\nПлощадка №3\nАвито\t-\tСоперник"
+    assert question == "Тур 5\nПлощадка №3\n(Пн) 19.10.2026 00:00\nАвито (Белый) - Соперник (Черный)"
+
+
+@pytest.mark.parametrize(
+    ("layout", "stored_time"),
+    [
+        ("Тур 5 {match_time}\nПлощадка №3\nАвито - Соперник", "(Вс) 18.10.2026\t21:00"),
+        ("Тур 5\n{match_time}\nПлощадка №3\nАвито - Соперник", "(Вс) 18.10.2026 21:00"),
+        ("Тур 5\nПлощадка №3\n{match_time}\nАвито - Соперник", "(Вс) 18.10.2026 21:00"),
+        ("Тур 5\nПлощадка №3\n{match_time}\nАвито - Соперник", "(Пн) 19.10.2026 00:00"),
+    ],
+)
+def test_stored_question_displays_moscow_time(layout, stored_time):
+    match_at = datetime(2026, 10, 18, 21, tzinfo=UTC)
+    question = layout.format(match_time=stored_time)
+
+    assert localize_stored_question(question, match_at) == layout.format(match_time="(Пн) 19.10.2026 00:00")
+
+
+def test_recurring_polls_run_sunday_and_tuesday_at_1000_moscow():
+    application = Application.builder().token("123:test").build()
+    set_daily_polls(application, 10)
+    reference = datetime(2026, 10, 17, tzinfo=UTC)
+
+    next_runs = {
+        job.data["question"]: job.job.trigger.get_next_fire_time(None, reference)
+        for job in application.job_queue.jobs()
+    }
+    assert next_runs == {
+        "Тренировка завтра": datetime(2026, 10, 18, 7, tzinfo=UTC),
+        "Игровая завтра": datetime(2026, 10, 20, 7, tzinfo=UTC),
+    }
 
 
 def test_only_owner_id_can_use_admin_commands():

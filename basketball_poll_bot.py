@@ -4,9 +4,10 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from dotenv import find_dotenv, load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -17,16 +18,18 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     ConversationHandler,
+    Defaults,
     MessageHandler,
     filters,
 )
 
-from game_store import GamesStore, GamesStoreError, parse_utc_datetime
 from commands import BOT_COMMANDS, help_text
+from game_store import GamesStore, GamesStoreError, format_utc_datetime, parse_utc_datetime
 
 
 logger = logging.getLogger(__name__)
-UTC = timezone.utc
+MOSCOW = ZoneInfo("Europe/Moscow")
+POLL_SEND_TIME = time(10, tzinfo=MOSCOW)
 POLL_OPTIONS = ["Буду", "Не буду", "50/50"]
 VENUES = ["Площадка №1", "Площадка №2", "Площадка №3"]
 PAGE_SIZE = 6
@@ -101,19 +104,25 @@ def game_job_name(game_id: str, chat_id: int) -> str:
 def should_cancel_game_job(game: dict[str, Any], now: datetime) -> bool:
     return (
         game["status"] == "scheduled"
-        and parse_utc_datetime(game["poll_at"]) > now.astimezone(UTC)
+        and parse_utc_datetime(game["poll_at"]) > now.astimezone(MOSCOW)
     )
 
 
 def parse_user_datetime(value: str) -> datetime:
     try:
-        return datetime.strptime(value.strip(), "%d.%m.%Y %H:%M").replace(tzinfo=UTC)
+        return datetime.strptime(value.strip(), "%d.%m.%Y %H:%M").replace(tzinfo=MOSCOW)
     except ValueError as error:
-        raise ValueError("Используйте формат ДД.ММ.ГГГГ ЧЧ:ММ в UTC") from error
+        raise ValueError("Используйте формат ДД.ММ.ГГГГ ЧЧ:ММ") from error
 
 
 def suggested_poll_at(match_at: datetime) -> datetime:
-    return (match_at - timedelta(days=2)).replace(hour=8, minute=0, second=0, microsecond=0)
+    poll_date = match_at.astimezone(MOSCOW).date() - timedelta(days=2)
+    return datetime.combine(poll_date, POLL_SEND_TIME)
+
+
+def format_match_time(match_at: datetime, separator: str = " ") -> str:
+    weekdays = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+    return f"({weekdays[match_at.weekday()]}) {match_at:%d.%m.%Y}{separator}{match_at:%H:%M}"
 
 
 def format_game_question(
@@ -123,26 +132,43 @@ def format_game_question(
     first_team: str,
     second_team: str,
 ) -> str:
-    weekdays = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
     return (
-        f"{tour} ({weekdays[match_at.weekday()]}) "
-        f"{match_at:%d.%m.%Y}\t{match_at:%H:%M}\n"
-        f"{venue}\n{first_team}\t-\t{second_team}"
+        f"{tour}\n"
+        f"{venue}\n"
+        f"{format_match_time(match_at.astimezone(MOSCOW))}\n"
+        f"{first_team} (Белый) - {second_team} (Черный)"
     )
+
+
+def localize_stored_question(question: str, match_at: datetime) -> str:
+    moscow_time = format_match_time(match_at.astimezone(MOSCOW))
+    if f"\n{moscow_time}\n" in question:
+        return question
+
+    # Older polls include the UTC timestamp on its own line or at the end of the tour line.
+    utc_time = format_match_time(match_at)
+    utc_time_with_tab = format_match_time(match_at, separator="\t")
+    for prefix, original in (("\n", utc_time), (" ", utc_time_with_tab)):
+        if f"{prefix}{original}\n" in question:
+            return question.replace(f"{prefix}{original}\n", f"{prefix}{moscow_time}\n", 1)
+    return question
 
 
 def game_label(game: dict[str, Any]) -> str:
     match_at = parse_utc_datetime(game["match_at"])
-    title = game["question"].splitlines()[0].replace("\t", " ")
-    return f"{match_at:%d.%m.%Y} — {title}"[:60]
+    question = localize_stored_question(game["question"], match_at)
+    title = question.splitlines()[0].replace("\t", " ")
+    return f"{match_at.astimezone(MOSCOW):%d.%m.%Y} — {title}"[:60]
 
 
 def game_details(game: dict[str, Any]) -> str:
+    match_at = parse_utc_datetime(game["match_at"])
+    poll_at = parse_utc_datetime(game["poll_at"]).astimezone(MOSCOW)
     sent_count = len(game["sent_chat_ids"])
     return (
-        f"{game['question']}\n\n"
-        f"Матч: {parse_utc_datetime(game['match_at']):%d.%m.%Y %H:%M} UTC\n"
-        f"Опрос: {parse_utc_datetime(game['poll_at']):%d.%m.%Y %H:%M} UTC\n"
+        f"{localize_stored_question(game['question'], match_at)}\n\n"
+        f"Матч: {match_at.astimezone(MOSCOW):%d.%m.%Y %H:%M}\n"
+        f"Опрос: {poll_at:%d.%m.%Y %H:%M}\n"
         f"Статус: {game['status']}\n"
         f"Опрос отправлен в чатов: {sent_count}"
     )
@@ -218,17 +244,22 @@ async def send_daily_poll(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def send_game_poll(context: ContextTypes.DEFAULT_TYPE) -> None:
-    game_id = context.job.data["game_id"]
-    chat_id = context.job.chat_id
+    await deliver_game_poll(context, context.job.data["game_id"], context.job.chat_id)
+
+
+async def deliver_game_poll(context: ContextTypes.DEFAULT_TYPE, game_id: str, chat_id: int) -> bool:
     store: GamesStore = context.application.bot_data["games_store"]
     chat_ids: list[int] = context.application.bot_data["chat_ids"]
 
     try:
         game = store.get(game_id)
         if game is None or game["status"] != "scheduled" or chat_id in game["sent_chat_ids"]:
-            return
-        if await send_poll_and_pin(context.bot, chat_id, game["question"]):
-            store.mark_delivery(game_id, chat_id, chat_ids)
+            return False
+        question = localize_stored_question(game["question"], parse_utc_datetime(game["match_at"]))
+        if not await send_poll_and_pin(context.bot, chat_id, question):
+            return False
+        store.mark_delivery(game_id, chat_id, chat_ids)
+        return True
     except GamesStoreError:
         logger.exception("Could not update game %s after sending its poll", game_id)
         await notify_owner(
@@ -236,12 +267,13 @@ async def send_game_poll(context: ContextTypes.DEFAULT_TYPE) -> None:
             context.application.bot_data["owner_user_id"],
             "Опрос был отправлен, но games.json не удалось обновить. Проверьте лог бота.",
         )
+        return False
 
 
 def set_daily_polls(application: Application, chat_id: int) -> None:
     application.job_queue.run_daily(
         callback=send_daily_poll,
-        time=time(9, tzinfo=UTC),
+        time=POLL_SEND_TIME,
         # Sunday: the day before the Monday training.
         days=(0,),
         data={"question": "Тренировка завтра"},
@@ -250,7 +282,7 @@ def set_daily_polls(application: Application, chat_id: int) -> None:
     )
     application.job_queue.run_daily(
         callback=send_daily_poll,
-        time=time(9, tzinfo=UTC),
+        time=POLL_SEND_TIME,
         # Tuesday: the day before the Wednesday game training.
         days=(2,),
         data={"question": "Игровая завтра"},
@@ -262,8 +294,8 @@ def set_daily_polls(application: Application, chat_id: int) -> None:
 def schedule_game(application: Application, game: dict[str, Any], chat_ids: list[int]) -> None:
     if game["status"] != "scheduled":
         return
-    poll_at = parse_utc_datetime(game["poll_at"])
-    if poll_at <= datetime.now(UTC):
+    poll_at = parse_utc_datetime(game["poll_at"]).astimezone(MOSCOW)
+    if poll_at <= datetime.now(MOSCOW):
         return
 
     for chat_id in chat_ids:
@@ -285,7 +317,22 @@ def cancel_game_jobs(application: Application, game_id: str, chat_ids: list[int]
 
 
 def restore_games(application: Application, store: GamesStore, chat_ids: list[int]) -> None:
-    store.mark_expired(datetime.now(UTC))
+    games = store.load()
+    changed = False
+    for game in games:
+        if game["status"] != "scheduled" or game.get("send_now"):
+            continue
+        current_poll_at = parse_utc_datetime(game["poll_at"]).astimezone(MOSCOW)
+        poll_at = datetime.combine(current_poll_at.date(), POLL_SEND_TIME)
+        if poll_at >= parse_utc_datetime(game["match_at"]):
+            poll_at -= timedelta(days=1)
+        if poll_at != current_poll_at:
+            game["poll_at"] = format_utc_datetime(poll_at)
+            changed = True
+
+    if changed:
+        store.save(games)
+    store.mark_expired(datetime.now(MOSCOW))
     for game in store.load():
         schedule_game(application, game, chat_ids)
 
@@ -350,7 +397,7 @@ async def add_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = context.user_data["game_draft"]
     draft["tour"] = update.effective_message.text.strip()
     await update.effective_message.reply_text(
-        "Введите дату и время матча в UTC: ДД.ММ.ГГГГ ЧЧ:ММ\nНапример: 18.10.2026 21:00"
+        "Введите дату и время матча по Москве в формате ДД.ММ.ГГГГ ЧЧ:ММ\nНапример: 18.10.2026 21:00"
     )
     return ADD_MATCH_AT
 
@@ -358,7 +405,7 @@ async def add_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def add_match_at(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         match_at = parse_user_datetime(update.effective_message.text)
-        if match_at <= datetime.now(UTC):
+        if match_at <= datetime.now(MOSCOW):
             raise ValueError("Дата матча должна быть в будущем")
     except ValueError as error:
         await update.effective_message.reply_text(f"{error}. Попробуйте ещё раз.")
@@ -367,30 +414,29 @@ async def add_match_at(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     draft = context.user_data["game_draft"]
     draft["match_at"] = match_at
     draft["poll_at"] = suggested_poll_at(match_at)
-    if draft["poll_at"] <= datetime.now(UTC):
-        await update.effective_message.reply_text(
-            "Расчётное время опроса уже прошло. Введите будущее время опроса в UTC: "
-            "ДД.ММ.ГГГГ ЧЧ:ММ"
-        )
-        return ADD_CUSTOM_POLL_AT
+    if draft["poll_at"] <= datetime.now(MOSCOW):
+        prompt = "Предложенное время опроса уже прошло. Отправить опрос сейчас или выбрать другую дату?"
+        primary_button = InlineKeyboardButton("Отправить сейчас", callback_data="add-send-now")
+    else:
+        prompt = f"Опрос будет отправлен {draft['poll_at']:%d.%m.%Y %H:%M}. Подтвердить?"
+        primary_button = InlineKeyboardButton("Подтвердить", callback_data="add-use-suggested-poll")
 
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Подтвердить", callback_data="add-use-suggested-poll")],
-            [InlineKeyboardButton("Изменить", callback_data="add-custom-poll")],
+            [primary_button],
+            [InlineKeyboardButton("Выбрать другую дату", callback_data="add-custom-poll")],
             [InlineKeyboardButton("Отмена", callback_data="cancel")],
         ]
     )
-    await update.effective_message.reply_text(
-        f"Опрос будет отправлен {draft['poll_at']:%d.%m.%Y %H:%M} UTC. Подтвердить?",
-        reply_markup=keyboard,
-    )
+    await update.effective_message.reply_text(prompt, reply_markup=keyboard)
     return ADD_POLL_AT
 
 
-async def add_use_suggested_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def add_poll_method(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
+    if query.data == "add-send-now":
+        context.user_data["game_draft"]["poll_at"] = None
     await query.edit_message_text("Выберите площадку:", reply_markup=venue_keyboard())
     return ADD_VENUE
 
@@ -398,16 +444,24 @@ async def add_use_suggested_poll(update: Update, context: ContextTypes.DEFAULT_T
 async def add_custom_poll_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Введите дату и время опроса в UTC: ДД.ММ.ГГГГ ЧЧ:ММ")
+    await query.edit_message_text(
+        f"Введите дату опроса в формате ДД.ММ.ГГГГ. Отправка в {POLL_SEND_TIME:%H:%M} по Москве."
+    )
     return ADD_CUSTOM_POLL_AT
 
 
 async def add_custom_poll_at(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = context.user_data["game_draft"]
     try:
-        poll_at = parse_user_datetime(update.effective_message.text)
-        if poll_at <= datetime.now(UTC):
-            raise ValueError("Дата опроса должна быть в будущем")
+        poll_date = datetime.strptime(update.effective_message.text.strip(), "%d.%m.%Y").date()
+    except ValueError:
+        await update.effective_message.reply_text("Введите дату в формате ДД.ММ.ГГГГ.")
+        return ADD_CUSTOM_POLL_AT
+
+    poll_at = datetime.combine(poll_date, POLL_SEND_TIME)
+    try:
+        if poll_at <= datetime.now(MOSCOW):
+            raise ValueError(f"Время отправки в {POLL_SEND_TIME:%H:%M} по Москве уже прошло")
         if poll_at >= draft["match_at"]:
             raise ValueError("Опрос должен быть раньше матча")
     except ValueError as error:
@@ -568,10 +622,13 @@ async def show_game_preview(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     draft["question"] = question
-    preview_text = f"Предпросмотр:\n\n{question}\n\nОпрос: {draft['poll_at']:%d.%m.%Y %H:%M} UTC"
+    poll_at = draft["poll_at"]
+    poll_time = "сразу после подтверждения" if poll_at is None else f"{poll_at:%d.%m.%Y %H:%M}"
+    confirm_label = "Добавить и отправить" if poll_at is None else "Добавить"
+    preview_text = f"Предпросмотр:\n\n{question}\n\nОпрос: {poll_time}"
     preview_keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Добавить", callback_data="add-confirm")],
+            [InlineKeyboardButton(confirm_label, callback_data="add-confirm")],
             [InlineKeyboardButton("Изменить", callback_data="add-restart")],
             [InlineKeyboardButton("Отмена", callback_data="cancel")],
         ]
@@ -587,28 +644,54 @@ async def add_game_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
     draft = context.user_data["game_draft"]
+    poll_at = draft["poll_at"]
+    now = datetime.now(MOSCOW)
+    if draft["match_at"] <= now:
+        await query.edit_message_text(
+            "Время матча уже прошло. Введите новую дату и время матча по Москве в формате ДД.ММ.ГГГГ ЧЧ:ММ."
+        )
+        return ADD_MATCH_AT
+
     game = {
         "id": uuid.uuid4().hex[:12],
-        "match_at": draft["match_at"].isoformat().replace("+00:00", "Z"),
-        "poll_at": draft["poll_at"].isoformat().replace("+00:00", "Z"),
+        "match_at": format_utc_datetime(draft["match_at"]),
+        "poll_at": format_utc_datetime(now if poll_at is None else poll_at),
         "question": draft["question"],
         "first_team": draft["first_team"],
         "second_team": draft["second_team"],
         "status": "scheduled",
         "sent_chat_ids": [],
     }
+    if poll_at is None:
+        game["send_now"] = True
     store: GamesStore = context.application.bot_data["games_store"]
+    chat_ids: list[int] = context.application.bot_data["chat_ids"]
     try:
         store.add(game)
-        schedule_game(context.application, game, context.application.bot_data["chat_ids"])
     except GamesStoreError:
         logger.exception("Could not add a game")
         await query.edit_message_text("Не удалось сохранить игру. Проверьте лог бота.")
         return ConversationHandler.END
 
     context.user_data.pop("game_draft", None)
+    if poll_at is None:
+        target_chat_ids = list(dict.fromkeys(chat_ids))
+        sent_count = 0
+        for chat_id in target_chat_ids:
+            if await deliver_game_poll(context, game["id"], chat_id):
+                sent_count += 1
+        try:
+            store.mark_expired(datetime.now(MOSCOW), game_id=game["id"])
+        except GamesStoreError:
+            logger.exception("Could not finalize immediate poll for game %s", game["id"])
+        await query.edit_message_text(
+            f"Игра добавлена. Опрос отправлен в {sent_count} из {len(target_chat_ids)} чатов."
+        )
+        return ConversationHandler.END
+
+    schedule_game(context.application, game, chat_ids)
     await query.edit_message_text(
-        f"Игра добавлена. Опрос назначен на {draft['poll_at']:%d.%m.%Y %H:%M} UTC."
+        f"Игра добавлена. Опрос назначен на {poll_at:%d.%m.%Y %H:%M}."
     )
     return ConversationHandler.END
 
@@ -677,7 +760,7 @@ async def delete_game_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
         if game is None:
             await query.edit_message_text("Игра уже удалена.")
             return ConversationHandler.END
-        if should_cancel_game_job(game, datetime.now(UTC)):
+        if should_cancel_game_job(game, datetime.now(MOSCOW)):
             cancel_game_jobs(context.application, game_id, context.application.bot_data["chat_ids"])
         store.delete(game_id)
     except GamesStoreError:
@@ -736,7 +819,7 @@ def management_conversation() -> ConversationHandler:
             ADD_TOUR: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_tour)],
             ADD_MATCH_AT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_match_at)],
             ADD_POLL_AT: [
-                CallbackQueryHandler(add_use_suggested_poll, pattern="^add-use-suggested-poll$"),
+                CallbackQueryHandler(add_poll_method, pattern="^add-(use-suggested-poll|send-now)$"),
                 CallbackQueryHandler(add_custom_poll_start, pattern="^add-custom-poll$"),
             ],
             ADD_CUSTOM_POLL_AT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_custom_poll_at)],
@@ -778,7 +861,13 @@ def main() -> None:
     except GamesStoreError as error:
         raise RuntimeError(f"Could not load games.json: {error}") from error
 
-    application = Application.builder().token(POLL_BOT_TOKEN).post_init(post_init).build()
+    application = (
+        Application.builder()
+        .token(POLL_BOT_TOKEN)
+        .defaults(Defaults(tzinfo=MOSCOW))
+        .post_init(post_init)
+        .build()
+    )
     if application.job_queue is None:
         raise RuntimeError("JobQueue is unavailable; install dependencies from requirements.txt")
 

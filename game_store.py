@@ -58,6 +58,10 @@ def validate_game(game: dict[str, Any]) -> dict[str, Any]:
     if poll_at >= match_at:
         raise GamesStoreError("Poll date must be earlier than match date")
 
+    send_now = game.get("send_now", False)
+    if not isinstance(send_now, bool):
+        raise GamesStoreError("send_now must be a boolean")
+
     sent_chat_ids = game.get("sent_chat_ids", [])
     if not isinstance(sent_chat_ids, list) or any(
         isinstance(chat_id, bool) or not isinstance(chat_id, int)
@@ -88,6 +92,8 @@ def validate_game(game: dict[str, Any]) -> dict[str, Any]:
     if first_team is not None:
         validated_game["first_team"] = first_team.strip()
         validated_game["second_team"] = second_team.strip()
+    if send_now:
+        validated_game["send_now"] = True
     return validated_game
 
 
@@ -183,11 +189,13 @@ class GamesStore:
             self.save(games)
         return updated_game
 
-    def mark_expired(self, now: datetime) -> list[dict[str, Any]]:
+    def mark_expired(self, now: datetime, *, game_id: str | None = None) -> list[dict[str, Any]]:
         now = now.astimezone(UTC)
         games = self.load()
         expired_games = []
         for game in games:
+            if game_id is not None and game["id"] != game_id:
+                continue
             if game["status"] == "scheduled" and parse_utc_datetime(game["poll_at"]) <= now:
                 game["status"] = "expired"
                 expired_games.append(game)
