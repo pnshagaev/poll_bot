@@ -35,7 +35,7 @@ send_message() {
 }
 
 host_name="$(hostname -f 2>/dev/null || hostname)"
-checked_at="$(date --utc '+%Y-%m-%d %H:%M UTC')"
+checked_at="$(TZ=Europe/Moscow date '+%Y-%m-%d %H:%M МСК')"
 
 case "${1:-}" in
     --test)

@@ -79,12 +79,13 @@ configuration outside the checkout instead.
 
 ## Scheduling decisions
 
-All schedule times are explicit UTC.
+The bot uses Europe/Moscow for time input, display, and job scheduling. The `match_at` and
+`poll_at` fields in `games.json` store UTC instants. Scheduled polls use 10:00 Moscow time.
 
-- The recurring training job deliberately uses `days=(0,)` at 09:00 UTC. In
+- The recurring training job deliberately uses `days=(0,)` at 10:00 Moscow time. In
   `python-telegram-bot` v20+, day `0` is Sunday, so this sends the poll one day before Monday
   training.
-- The recurring game-training job deliberately uses `days=(2,)` at 09:00 UTC. Day `2` is
+- The recurring game-training job deliberately uses `days=(2,)` at 10:00 Moscow time. Day `2` is
   Tuesday, so it sends the poll one day before Wednesday game training.
 
 Do not change those day indices to Monday/Wednesday unless the business rule changes.
@@ -95,9 +96,12 @@ One-off games have `match_at`, `poll_at`, `status`, and per-chat delivery tracki
 - `sent` — delivered to every configured target chat;
 - `expired` — poll time passed without a complete delivery.
 
-On startup the bot marks overdue scheduled games as `expired` and schedules only future
-scheduled games. A game is sent once per chat; `sent_chat_ids` prevents duplicate polls after a
-restart or a partial delivery.
+On startup the bot aligns pending scheduled polls with 10:00 on their Moscow date. If this would
+place the poll at or after the match, it uses 10:00 on the previous date. The bot marks overdue
+scheduled games as `expired` and schedules only future ones. A game is sent once per chat;
+`sent_chat_ids` prevents duplicate polls after a restart or a partial delivery.
+Immediate polls store `send_now: true` and the actual dispatch attempt time. An interrupted
+immediate poll follows the normal expiration rule.
 
 ## Commands and access rules
 
@@ -118,8 +122,10 @@ Use the numeric owner ID, not a Telegram username. Usernames are changeable.
 `/addgame` is a `ConversationHandler` flow:
 
 1. Tour name.
-2. Match date/time in UTC.
-3. Suggested poll date: two days before the match at 08:00 UTC, with an option to override it.
+2. Match date/time in Moscow time.
+3. Suggested poll date: two days before the match, with an option to choose another date.
+   Scheduled polls are sent at 10:00 Moscow time. If the suggested time has passed, the first
+   option sends the poll immediately after the owner confirms the preview.
 4. Venue selection or custom venue.
 5. First team selection.
 6. Second team selection.
