@@ -52,7 +52,7 @@ PAGE_SIZE = 6
 
 load_dotenv(find_dotenv())
 POLL_BOT_TOKEN = os.getenv("POLL_BOT_TOKEN")
-GAMES_STORE = GamesStore(Path(__file__).with_name("games.json"))
+GAMES_STORE = GamesStore(Path(os.getenv("GAMES_FILE", str(Path(__file__).with_name("games.json")))))
 
 
 def load_chat_ids() -> list[int]:

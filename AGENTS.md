@@ -48,6 +48,25 @@ Git.
 
 ## Deployment
 
+The new target prepared in November 2026 is Proxmox **VM 110 `services`**,
+`192.168.1.20`, Debian 13 with Python 3.13. It is a VM, not an LXC container.
+Updates are manual: `basketball-bot-pull` inside the VM, or
+`ssh root@192.168.1.20 basketball-bot-pull` from the owner's computer.
+`basketball-bot-pull --check` fetches the available SHA without installing or restarting.
+There is no update timer and GitHub Actions runs tests only. Preserve administrative
+SSH key access from the owner's computer and access through Proxmox.
+
+The VM unit in `deploy/` uses `/opt/basketball-bot/current`, runs as `basketball-bot`,
+and sets `GAMES_FILE=/var/lib/basketball-bot/games.json`. The optional GAMES_FILE
+setting keeps the legacy default when absent. Production env remains outside Git
+in `/etc/basketball-bot.env`. The owner chose an empty games file for this migration.
+`deploy` builds/tests a candidate and activates releases using narrow service sudo
+permissions. See `docs/deploy-proxmox-lxc.md` for setup and rollback.
+Do not launch the first production instance before the owner stops the old polling bot
+and authorizes the cutover. Preparation and `--check` do not authorize production start.
+
+### Legacy server
+
 The expected production checkout is `/home/ubuntu/basketball_bot`, executed by the `ubuntu`
 user. The service installed at `/etc/systemd/system/basketball.bot.service` uses:
 

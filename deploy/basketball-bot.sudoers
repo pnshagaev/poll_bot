@@ -1,0 +1,4 @@
+# Install as /etc/sudoers.d/basketball-bot, root:root, mode 0440.
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart basketball.bot.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl stop basketball.bot.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl reset-failed basketball.bot.service

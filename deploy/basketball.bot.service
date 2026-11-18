@@ -1,0 +1,32 @@
+[Unit]
+Description=Basketball Telegram Poll Bot (Proxmox VM 110)
+Wants=network-online.target
+After=network-online.target
+OnFailure=basketball-bot-alert.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=basketball-bot
+Group=basketball-bot
+WorkingDirectory=/opt/basketball-bot/current
+EnvironmentFile=/etc/basketball-bot.env
+Environment=GAMES_FILE=/var/lib/basketball-bot/games.json
+Environment=PYTHON_DOTENV_DISABLED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/basketball-bot/current/venv/bin/python -u /opt/basketball-bot/current/basketball_poll_bot.py
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/basketball-bot
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

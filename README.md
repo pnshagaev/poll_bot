@@ -5,6 +5,22 @@
 sudo systemctl restart basketball.bot
 ```
 
+## Перенос в Proxmox VM 110
+
+Ручное обновление бота в VM `services` (`192.168.1.20`), из root-консоли VM:
+
+```bash
+basketball-bot-pull
+```
+
+Проверка доступной версии без установки и перезапуска: `basketball-bot-pull --check`.
+Команда получает `main` по HTTPS, устанавливает зависимости, запускает тесты и
+активирует релиз с проверкой состояния и откатом при ошибке. Таймера обновлений нет.
+GitHub Actions выполняет только проверки. Настройка WireGuard/keen-pbr не требуется.
+Подготовка VM и первого запуска:
+[docs/deploy-proxmox-lxc.md](docs/deploy-proxmox-lxc.md).
+Старый systemd unit в корне сохранён; отдельный unit для VM находится в `deploy/`.
+
 ## Игры
 
 Игры хранятся в `games.json`; файл не нужно редактировать для обычного управления.
