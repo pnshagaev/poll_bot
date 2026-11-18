@@ -51,8 +51,8 @@ fi
 work="$(mktemp -d "$base/.pull.XXXXXXXX")"
 mkdir "$work/source" "$work/release" "$work/release/wheelhouse"
 # Explicit allowlist: the tracked .env and games.json never enter the work tree.
-git --git-dir="$cache" archive "$sha" basketball_poll_bot.py game_store.py commands.py \
-    requirements.txt pytest.ini tests deploy | tar -x -C "$work/source"
+git --git-dir="$cache" archive "$sha" basketball_poll_bot.py game_store.py commands.py error_reporting.py \
+    requirements.txt pytest.ini tests deploy monitor | tar -x -C "$work/source"
 echo '[2/5] Installing test dependencies in an isolated venv'
 python3 -c 'import sys; assert sys.version_info[:2] == (3, 13), "Python 3.13 required"'
 python3 -m venv "$work/test-venv"
@@ -74,7 +74,7 @@ echo '[4/5] Packing the tested dependencies and source'
 for wheel in "$work/release/wheelhouse/"*.whl; do
     [[ "$wheel" == *-none-any.whl ]] || { echo 'Unexpected platform-specific dependency' >&2; exit 1; }
 done
-cp "$work/source/"{basketball_poll_bot.py,game_store.py,commands.py,requirements.txt} "$work/release/"
+cp "$work/source/"{basketball_poll_bot.py,game_store.py,commands.py,error_reporting.py,requirements.txt} "$work/release/"
 git --git-dir="$cache" rev-list "$sha" > "$work/release/ancestors.txt"
 latest="$(timeout 30 git ls-remote --exit-code "$repo" refs/heads/main)"
 [[ "${latest%%[[:space:]]*}" == "$sha" ]] || { echo 'main changed during preparation; run the command again' >&2; exit 1; }

@@ -24,6 +24,7 @@ from telegram.ext import (
 )
 
 from commands import BOT_COMMANDS, help_text
+from error_reporting import error_message
 from game_store import GamesStore, GamesStoreError, format_utc_datetime, parse_utc_datetime
 
 
@@ -197,19 +198,28 @@ def delete_keyboard(games: list[dict[str, Any]], page: int) -> InlineKeyboardMar
     return InlineKeyboardMarkup(rows)
 
 
-async def notify_chat_about_error(bot: Bot, chat_id: int) -> None:
+async def notify_chat_about_error(
+    bot: Bot,
+    chat_id: int,
+    error: BaseException | None = None,
+    summary: str = "Не удалось отправить или закрепить опрос.",
+) -> None:
     try:
         await bot.send_message(
             chat_id=chat_id,
-            text="Не удалось отправить или закрепить опрос. Попробуйте позже.",
+            text=error_message(summary, error),
         )
     except TelegramError:
         logger.exception("Could not send an error notification to chat %s", chat_id)
 
 
-async def notify_owner(bot: Bot, owner_user_id: int, message: str) -> None:
+async def notify_owner(
+    bot: Bot, owner_user_id: int, message: str, error: BaseException | None = None,
+) -> None:
     try:
-        await bot.send_message(chat_id=owner_user_id, text=message)
+        await bot.send_message(
+            chat_id=owner_user_id, text=error_message(message, error) if error is not None else message,
+        )
     except TelegramError:
         logger.exception("Could not notify the bot owner")
 
@@ -222,16 +232,16 @@ async def send_poll_and_pin(bot: Bot, chat_id: int, question: str) -> bool:
             options=POLL_OPTIONS,
             is_anonymous=False,
         )
-    except TelegramError:
+    except TelegramError as error:
         logger.exception("Could not send a poll in chat %s", chat_id)
-        await notify_chat_about_error(bot, chat_id)
+        await notify_chat_about_error(bot, chat_id, error, "Не удалось отправить опрос.")
         return False
 
     try:
         await bot.pin_chat_message(chat_id=chat_id, message_id=message.message_id)
-    except TelegramError:
+    except TelegramError as error:
         logger.exception("Could not pin a poll in chat %s", chat_id)
-        await notify_chat_about_error(bot, chat_id)
+        await notify_chat_about_error(bot, chat_id, error, "Опрос отправлен, но закрепить его не удалось.")
     return True
 
 
@@ -260,12 +270,13 @@ async def deliver_game_poll(context: ContextTypes.DEFAULT_TYPE, game_id: str, ch
             return False
         store.mark_delivery(game_id, chat_id, chat_ids)
         return True
-    except GamesStoreError:
+    except GamesStoreError as error:
         logger.exception("Could not update game %s after sending its poll", game_id)
         await notify_owner(
             context.bot,
             context.application.bot_data["owner_user_id"],
-            "Опрос был отправлен, но games.json не удалось обновить. Проверьте лог бота.",
+            "Опрос был отправлен, но games.json не удалось обновить.",
+            error,
         )
         return False
 
@@ -788,15 +799,18 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     chat_id = None
     if isinstance(update, Update) and update.effective_chat:
         chat_id = update.effective_chat.id
-    elif context.job and context.job.chat_id:
+    elif getattr(context, "job", None) and context.job.chat_id:
         chat_id = context.job.chat_id
 
-    if chat_id is not None:
-        await notify_chat_about_error(context.bot, chat_id)
+    summary = "В работе бота произошла ошибка."
+    owner_user_id = context.application.bot_data["owner_user_id"]
+    if chat_id is not None and chat_id != owner_user_id:
+        await notify_chat_about_error(context.bot, chat_id, context.error, summary)
     await notify_owner(
         context.bot,
-        context.application.bot_data["owner_user_id"],
-        "В работе бота произошла ошибка. Подробности записаны в журнал.",
+        owner_user_id,
+        summary,
+        context.error,
     )
 
 

@@ -32,6 +32,6 @@ jobs:
           PYTHON_DOTENV_DISABLED: '1'
         run: |
           python -m pytest
-          for script in deploy/*.sh; do bash -n "$script"; done
-          shellcheck deploy/*.sh
+          for script in deploy/*.sh monitor/*.sh; do bash -n "$script"; done
+          shellcheck deploy/*.sh monitor/*.sh
           git diff --check

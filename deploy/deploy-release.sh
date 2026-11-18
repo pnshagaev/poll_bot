@@ -90,7 +90,7 @@ else
     python3 - "$upload" <<'PY'
 import pathlib, sys, tarfile
 with tarfile.open(sys.argv[1], "r:gz") as archive:
-    required = {"basketball_poll_bot.py", "game_store.py", "commands.py", "requirements.txt", "constraints.txt", "ancestors.txt"}
+    required = {"basketball_poll_bot.py", "game_store.py", "commands.py", "error_reporting.py", "requirements.txt", "constraints.txt", "ancestors.txt"}
     found = set()
     for member in archive:
         path = pathlib.PurePosixPath(member.name)

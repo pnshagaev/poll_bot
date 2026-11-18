@@ -173,6 +173,10 @@ sends a concise error message to the affected chat. Unexpected handler/job failu
 reported to the affected chat when possible, and reported to the owner.
 
 Do not expose tokens, tracebacks, or private configuration in Telegram messages.
+Error notices include the exception class and a short, redacted exception message.
+`error_reporting.py` is shared with the standalone monitor; include it in release
+archives and install an adjacent copy beside `monitor/notify.py`. Do not forward raw
+journal output to Telegram. Tests of alerts must not stop the production bot.
 
 ## Tests
 
@@ -192,8 +196,9 @@ add/update focused tests rather than relying only on manual Telegram checks.
 
 ## Monitoring
 
-`monitor/check-basketball-bot.sh` reads `/etc/basketball-bot.env` and sends alerts to Telegram
-ID `41879174`.
+`monitor/check-basketball-bot.sh` invokes the stdlib-only `monitor/notify.py`, which
+reads `/etc/basketball-bot.env` and sends alerts to `OWNER_USER_ID` (default `41879174`).
+Alerts include service state, exit code and redacted exception messages from the journal.
 
 - `basketball-bot-alert.service` is triggered by `OnFailure=` after the main service ultimately
   fails.

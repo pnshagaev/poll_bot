@@ -60,6 +60,7 @@ venv/bin/pytest
 ```
 sudo apt install -y curl
 sudo install -D -m 755 monitor/check-basketball-bot.sh /usr/local/lib/basketball-bot-monitor/check-basketball-bot.sh
+sudo install -m 644 monitor/notify.py error_reporting.py /usr/local/lib/basketball-bot-monitor/
 sudo install -m 644 monitor/basketball-bot-alert.service /etc/systemd/system/basketball-bot-alert.service
 sudo install -m 644 monitor/basketball-bot-healthcheck.service /etc/systemd/system/basketball-bot-healthcheck.service
 sudo install -m 644 monitor/basketball-bot-healthcheck.timer /etc/systemd/system/basketball-bot-healthcheck.timer
@@ -70,8 +71,13 @@ sudo systemctl restart basketball.bot
 ```
 
 По умолчанию скрипт использует `POLL_BOT_TOKEN` из `/etc/basketball-bot.env` и отправляет
-уведомления Telegram ID `41879174`. Для независимого мониторинга можно добавить в этот файл
+уведомления владельцу из `OWNER_USER_ID` (по умолчанию `41879174`). Для независимого мониторинга можно добавить в этот файл
 отдельный `MONITOR_BOT_TOKEN` другого Telegram-бота.
+
+Сообщения бота об ошибках содержат тип и текст исключения. Мониторинг systemd добавляет
+состояние процесса, код завершения и последние строки ошибок из журнала. Токены, пароли
+и ключи скрываются перед отправкой; полный traceback остаётся на сервере.
+Монитор использует системный Python без зависимостей от venv приложения.
 
 Проверка отправляет реальное личное сообщение, но не останавливает сервис:
 

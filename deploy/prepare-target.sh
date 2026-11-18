@@ -35,6 +35,7 @@ install -o root -g root -m 0440 "$source_dir/deploy/basketball-bot.sudoers" /etc
 visudo -c
 install -o root -g root -m 0644 "$source_dir/deploy/basketball.bot.service" /etc/systemd/system/basketball.bot.service
 install -D -o root -g root -m 0755 "$source_dir/monitor/check-basketball-bot.sh" /usr/local/lib/basketball-bot-monitor/check-basketball-bot.sh
+install -o root -g root -m 0644 "$source_dir/monitor/notify.py" "$source_dir/error_reporting.py" /usr/local/lib/basketball-bot-monitor/
 for unit in basketball-bot-alert.service basketball-bot-healthcheck.service basketball-bot-healthcheck.timer; do
     install -o root -g root -m 0644 "$source_dir/monitor/$unit" "/etc/systemd/system/$unit"
 done

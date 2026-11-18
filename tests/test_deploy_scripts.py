@@ -66,7 +66,7 @@ source "$HARNESS_SCRIPT" "$@"
 
     def archive(sha=NEW, ancestors=None, extra=None):
         upload = base / "incoming" / f"{sha}-1-1.tar.gz"
-        files = {name: b"" for name in ["basketball_poll_bot.py", "game_store.py", "commands.py", "requirements.txt", "constraints.txt"]}
+        files = {name: b"" for name in ["basketball_poll_bot.py", "game_store.py", "commands.py", "error_reporting.py", "requirements.txt", "constraints.txt"]}
         files["ancestors.txt"] = ("\n".join(ancestors or [sha, OLD]) + "\n").encode()
         files.update(extra or {})
         with tarfile.open(upload, "w:gz") as stream:

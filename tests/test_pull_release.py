@@ -18,10 +18,10 @@ def pull(tmp_path):
     (base / "incoming").mkdir(parents=True)
     (base / "releases").mkdir()
     repo.mkdir()
-    for directory in ["tests", "deploy"]:
+    for directory in ["tests", "deploy", "monitor"]:
         (repo / directory).mkdir()
         (repo / directory / "placeholder.txt").write_text("fixture")
-    for name in ["basketball_poll_bot.py", "game_store.py", "commands.py", "requirements.txt", "pytest.ini"]:
+    for name in ["basketball_poll_bot.py", "game_store.py", "commands.py", "error_reporting.py", "requirements.txt", "pytest.ini"]:
         (repo / name).write_text("")
     for name in [".env", "games.json"]:
         (repo / name).write_text("SENSITIVE_TEST_MARKER")
