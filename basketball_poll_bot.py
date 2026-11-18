@@ -4,14 +4,16 @@ import json
 import logging
 import os
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from dotenv import find_dotenv, load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import TelegramError
+from telegram.error import BadRequest, NetworkError, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -22,9 +24,10 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 from commands import BOT_COMMANDS, help_text
-from error_reporting import error_message
+from error_reporting import error_details, error_message
 from game_store import GamesStore, GamesStoreError, format_utc_datetime, parse_utc_datetime
 
 
@@ -34,6 +37,69 @@ POLL_SEND_TIME = time(10, tzinfo=MOSCOW)
 POLL_OPTIONS = ["Буду", "Не буду", "50/50"]
 VENUES = ["Площадка №1", "Площадка №2", "Площадка №3"]
 PAGE_SIZE = 6
+POLLING_ALERT_AFTER = 60 * 60
+
+
+@dataclass
+class PollingOutage:
+    started_at: float
+    last_error: str
+    recovered_at: float | None = None
+    warning_sent: bool = False
+
+    def duration(self) -> float:
+        end = self.recovered_at if self.recovered_at is not None else monotonic()
+        return end - self.started_at
+
+
+@dataclass
+class PollingNetworkState:
+    current: PollingOutage | None = None
+    pending_recoveries: list[PollingOutage] = field(default_factory=list)
+
+    def record_failure(self, error: NetworkError) -> None:
+        if self.current is None:
+            self.current = PollingOutage(monotonic(), error_details(error))
+        else:
+            self.current.last_error = error_details(error)
+        # Mark the exact exception so unrelated handler/job errors stay immediate.
+        error._polling_network_state = self
+
+    def record_success(self) -> None:
+        outage = self.current
+        if outage is None:
+            return
+        outage.recovered_at = monotonic()
+        self.current = None
+        if outage.warning_sent or outage.duration() >= POLLING_ALERT_AFTER:
+            # Keep completed incidents until their recovery notice is delivered,
+            # even if another outage begins in the meantime.
+            self.pending_recoveries.append(outage)
+
+
+class PollingRequest(HTTPXRequest):
+    """Observe successful getUpdates as well as failures, including timeouts."""
+
+    def __init__(self, network_state: PollingNetworkState) -> None:
+        super().__init__(connection_pool_size=1)
+        self.network_state = network_state
+
+    async def do_request(self, url: str, method: str, **kwargs: Any) -> tuple[int, bytes]:
+        if url.rsplit("/", 1)[-1] != "getUpdates":
+            return await super().do_request(url=url, method=method, **kwargs)
+        try:
+            status, payload = await super().do_request(url=url, method=method, **kwargs)
+            if status >= 500:
+                raise NetworkError(f"Telegram getUpdates HTTP {status}")
+        except BadRequest:
+            raise
+        except NetworkError as error:
+            self.network_state.record_failure(error)
+            raise
+        if status == 200 and self.parse_json_payload(payload).get("ok") is True:
+            self.network_state.record_success()
+        return status, payload
+
 
 (
     ADD_TOUR,
@@ -793,8 +859,51 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
     return ConversationHandler.END
 
 
+def format_outage_duration(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    return f"{minutes // 60} ч {minutes % 60} мин"
+
+
+async def check_polling_health(context: ContextTypes.DEFAULT_TYPE) -> None:
+    state: PollingNetworkState = context.application.bot_data["polling_network_state"]
+    owner_user_id = context.application.bot_data["owner_user_id"]
+
+    async def send_notice(text: str) -> bool:
+        try:
+            await context.bot.send_message(chat_id=owner_user_id, text=text)
+        except TelegramError:
+            logger.exception("Could not send a polling network notification to the owner")
+            return False
+        return True
+
+    while state.pending_recoveries:
+        outage = state.pending_recoveries[0]
+        text = (
+            "Связь с Telegram восстановлена.\n"
+            f"Сбой получения обновлений продолжался {format_outage_duration(outage.duration())}."
+        )
+        if not await send_notice(text):
+            return
+        state.pending_recoveries.pop(0)
+
+    outage = state.current
+    if outage is not None and not outage.warning_sent and outage.duration() >= POLLING_ALERT_AFTER:
+        text = (
+            f"Не удаётся получать обновления от Telegram уже {format_outage_duration(outage.duration())}.\n"
+            "Бот продолжает попытки подключения.\n"
+            f"{outage.last_error}"
+        )
+        if await send_notice(text):
+            outage.warning_sent = True
+
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Unhandled exception while processing an update", exc_info=context.error)
+
+    state = context.application.bot_data.get("polling_network_state")
+    if state is not None and getattr(context.error, "_polling_network_state", None) is state:
+        # Polling retries are automatic; the health job handles prolonged outages.
+        return
 
     chat_id = None
     if isinstance(update, Update) and update.effective_chat:
@@ -875,9 +984,11 @@ def main() -> None:
     except GamesStoreError as error:
         raise RuntimeError(f"Could not load games.json: {error}") from error
 
+    network_state = PollingNetworkState()
     application = (
         Application.builder()
         .token(POLL_BOT_TOKEN)
+        .get_updates_request(PollingRequest(network_state))
         .defaults(Defaults(tzinfo=MOSCOW))
         .post_init(post_init)
         .build()
@@ -890,7 +1001,11 @@ def main() -> None:
             "chat_ids": chat_ids,
             "owner_user_id": owner_user_id,
             "games_store": GAMES_STORE,
+            "polling_network_state": network_state,
         }
+    )
+    application.job_queue.run_repeating(
+        check_polling_health, interval=300, first=300, name="polling-network-health",
     )
     for chat_id in chat_ids:
         set_daily_polls(application, chat_id)
