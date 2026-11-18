@@ -31,8 +31,11 @@ health() {
     done
 }
 restart() {
-    sudo -n /usr/bin/systemctl reset-failed "$service" &&
-        sudo -n /usr/bin/systemctl restart "$service"
+    # reset-failed does not load a never-started unit and fails on first install.
+    if systemctl is-failed --quiet "$service"; then
+        sudo -n /usr/bin/systemctl reset-failed "$service" || return 1
+    fi
+    sudo -n /usr/bin/systemctl restart "$service"
 }
 finish() {
     local result=$?

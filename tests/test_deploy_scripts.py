@@ -35,6 +35,10 @@ sudo() {
     return 0
 }
 systemctl() {
+    if [[ "$1" == is-failed ]]; then
+        [[ "$HARNESS_INITIAL_FAILED" == true ]]
+        return
+    fi
     local current
     current="$(readlink -f "$HARNESS_BASE/current")"
     if [[ "${current##*/}" == "$HARNESS_BAD_SHA" ]]; then
@@ -73,8 +77,9 @@ source "$HARNESS_SCRIPT" "$@"
         digest = hashlib.sha256(upload.read_bytes()).hexdigest()
         return [sha, upload.name, digest]
 
-    def run(*args, bad=""):
-        result = subprocess.run(["bash", "-c", bootstrap, "harness", *args], env={**env, "HARNESS_BAD_SHA": bad},
+    def run(*args, bad="", failed=False):
+        result = subprocess.run(["bash", "-c", bootstrap, "harness", *args],
+                                env={**env, "HARNESS_BAD_SHA": bad, "HARNESS_INITIAL_FAILED": str(failed).lower()},
                                 text=True, capture_output=True, timeout=30)
         return result
 
@@ -102,6 +107,18 @@ def test_new_release_installs_offline_in_readable_final_directory(remote):
     assert (release / ".ready").is_file()
     assert (release / "venv/bin/python").is_file()
     assert stat.S_IMODE(release.stat().st_mode) == 0o755
+    assert "reset-failed" not in log.read_text()
+
+
+def test_previously_failed_service_is_reset_before_restart(remote):
+    base, ready, archive, run, log = remote
+    (base / "current").symlink_to(ready(OLD))
+    args = archive()
+    ready(NEW, args[2])
+    result = run(*args, failed=True)
+    assert result.returncode == 0, result.stderr
+    calls = log.read_text().splitlines()
+    assert calls.index("reset-failed basketball.bot.service") < calls.index("restart basketball.bot.service")
 
 
 def test_deploy_lock_prevents_concurrent_activation(remote):
