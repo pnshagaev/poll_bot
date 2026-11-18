@@ -50,6 +50,7 @@ esac
     activate = tmp_path / "activate"
     activate.write_text(r'''#!/usr/bin/env bash
 set -e
+[[ "$PWD" == "$HARNESS_BASE" ]]
 printf '%s\n' "$@" > "$HARNESS_ACTIVATE_LOG"
 cp "$HARNESS_BASE/incoming/$2" "$HARNESS_CAPTURE"
 ''')

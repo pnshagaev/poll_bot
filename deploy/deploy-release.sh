@@ -66,6 +66,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
 [[ "$(id -un)" == deploy ]] || fail 'Run as deploy'
+cd "$base"
 exec 9>"$base/deploy.lock"
 flock -w 60 9 || fail 'Another deployment holds the target lock'
 if [[ -e "$base/current" || -L "$base/current" ]]; then

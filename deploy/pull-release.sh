@@ -11,6 +11,7 @@ mode="${1:---apply}"
     echo 'Usage: basketball-bot-pull [--check]' >&2; exit 2;
 }
 base=/opt/basketball-bot
+cd "$base"
 repo=https://github.com/pnshagaev/poll_bot.git
 cache="$base/source.git"
 work=''
