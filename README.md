@@ -1,11 +1,21 @@
-- Бот лежит на сервере амнезии
-- Скрипт запуска /etc/systemd/system/basketball.bot.service
-- Перезапустить скрипт
-```
+# Баскетбольный Telegram-бот
+
+Бот работает на Proxmox VM 110 `services` (`192.168.1.20`) под Debian 13.
+Код хранится в `/opt/basketball-bot/releases/`, активная версия доступна через
+`/opt/basketball-bot/current`. Сервис systemd — `basketball.bot`, его unit установлен
+в `/etc/systemd/system/basketball.bot.service` из `deploy/basketball.bot.service`.
+Автозапуск бота и ежечасного мониторинга включён.
+
+Перезапуск из консоли VM:
+
+```bash
 sudo systemctl restart basketball.bot
 ```
 
-## Перенос в Proxmox VM 110
+Доступ с компьютера владельца: `ssh root@192.168.1.20`. Также доступна Console VM
+в панели Proxmox.
+
+## Ручное обновление
 
 Ручное обновление бота в VM `services` (`192.168.1.20`), из root-консоли VM:
 
@@ -23,7 +33,8 @@ GitHub Actions выполняет только проверки. Настрой�
 
 ## Игры
 
-Игры хранятся в `games.json`; файл не нужно редактировать для обычного управления.
+Игры в VM хранятся в `/var/lib/basketball-bot/games.json`, отдельно от релизов кода;
+файл не нужно редактировать для обычного управления.
 Команды `/addgame` и `/deletegame` доступны только владельцу с Telegram ID из
 `OWNER_USER_ID`; `/games` доступна всем. Бот принимает и показывает время по Москве.
 Все опросы по расписанию отправляются в 10:00 по Москве. Опросы на понедельник и среду
@@ -43,28 +54,24 @@ Telegram, которое бот публикует при запуске.
 Файл должен содержать `POLL_BOT_TOKEN`, `TG_CHAT_IDS` и `OWNER_USER_ID`, а systemd-сервис
 `basketball.bot.service` читает его через `EnvironmentFile`.
 
-После обновления кода установите зависимости и запустите тесты:
-
-```
-venv/bin/pip install -r requirements.txt
-venv/bin/pytest
-```
+Установку зависимостей, тестирование и проверку процесса после обновления выполняет
+команда `basketball-bot-pull`.
 
 ## Мониторинг systemd
 
 В папке `monitor/` есть service и timer для оповещений в Telegram: при окончательном падении
 `basketball.bot` оповещение отправляется сразу, а timer дополнительно проверяет сервис раз в час.
 Время в оповещениях указано по Москве.
-Для установки на сервере:
+Для установки или переустановки файлов выполните команды внутри VM
+из проверенной копии репозитория:
 
-```
-sudo apt install -y curl
+```bash
 sudo install -D -m 755 monitor/check-basketball-bot.sh /usr/local/lib/basketball-bot-monitor/check-basketball-bot.sh
 sudo install -m 644 monitor/notify.py error_reporting.py /usr/local/lib/basketball-bot-monitor/
 sudo install -m 644 monitor/basketball-bot-alert.service /etc/systemd/system/basketball-bot-alert.service
 sudo install -m 644 monitor/basketball-bot-healthcheck.service /etc/systemd/system/basketball-bot-healthcheck.service
 sudo install -m 644 monitor/basketball-bot-healthcheck.timer /etc/systemd/system/basketball-bot-healthcheck.timer
-sudo install -m 644 basketball.bot.service /etc/systemd/system/basketball.bot.service
+sudo install -m 644 deploy/basketball.bot.service /etc/systemd/system/basketball.bot.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now basketball-bot-healthcheck.timer
 sudo systemctl restart basketball.bot
